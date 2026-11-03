@@ -61,7 +61,7 @@
   a.filebtn { display:inline-block; text-decoration:none; cursor:grab; }
   #fname { font-size:.85rem; color:var(--muted); }
   #stats { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
-  #stats span, #fl span { background:var(--crema); color:var(--verde-osc); border-radius:999px; padding:4px 12px; font-size:.82rem; font-weight:600; }
+  #stats span { background:var(--crema); color:var(--verde-osc); border-radius:999px; padding:4px 12px; font-size:.82rem; font-weight:600; }
   #out { margin-top:18px; }
   .winner { display:flex; gap:14px; align-items:center; padding:14px 16px; border:1.5px solid var(--line); border-radius:var(--radio); margin-bottom:10px; background:#fff; animation:pop .4s ease both; }
   .winner.first { border-color:transparent; background:linear-gradient(#fff,#fff) padding-box, var(--grad) border-box; border:2px solid transparent; box-shadow:0 8px 24px rgba(122,135,69,.22); }
@@ -150,9 +150,9 @@
     <div style="margin-top:12px"><label for="excl">Excluir usuarios (separados por comas, sin @)</label><input type="text" id="excl" placeholder="tu_cuenta, colaborador1"></div>
     <div style="margin-top:16px">
       <label>Cuentas que hay que seguir (opcional)</label>
-      <p class="note" style="margin:0 0 8px">Sube la lista de seguidores de cada cuenta. En Instagram: Configuración → Centro de cuentas → Tu información y permisos → Descargar tu información → Seguidores. Nombra cada archivo como la cuenta.</p>
-      <label class="filebtn">👥 Añadir listas de seguidores<input type="file" id="segFile" accept=".json,.html,.txt,.csv" multiple></label>
-      <div id="fl" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      <p class="note" style="margin:0 0 8px">Pega la lista de seguidores de cada cuenta, un usuario por línea. También vale pegar el contenido del archivo de Instagram (Configuración → Centro de cuentas → Tu información y permisos → Descargar tu información → Seguidores).</p>
+      <div id="cuentas"></div>
+      <button class="sec" id="addCuenta" type="button">+ Añadir cuenta</button>
       <div class="check"><input type="checkbox" id="soloSeg" checked><label for="soloSeg">Solo participan quienes sigan a todas</label></div>
     </div>
   </section>
@@ -236,21 +236,42 @@ function userList(text) {
 }
 const nSigue = c => seguidores.filter(s => s.set.has(c.user)).length;
 const siguenTodas = c => nSigue(c) === seguidores.length;
-const textoSigue = c => seguidores.length
-  ? (siguenTodas(c) ? '✔ Sigue a las ' + seguidores.length + ' cuentas' : 'Sigue a ' + nSigue(c) + ' de ' + seguidores.length) : '';
-function drawFollowers() {
-  $('fl').innerHTML = seguidores.map((s, i) =>
-    '<span>' + esc(s.name) + ': ' + s.set.size + ' seguidores <a href="#" data-i="' + i + '" style="color:inherit">✕</a></span>').join('');
+const textoSigue = c => {
+  if (!seguidores.length) return '';
+  if (siguenTodas(c)) return '✔ Sigue a las ' + seguidores.length + ' cuentas';
+  return 'Sigue a ' + nSigue(c) + ' de ' + seguidores.length + ' (no sigue a ' + seguidores.filter(s => !s.set.has(c.user)).map(s => s.name).join(', ') + ')';
+};
+
+/* un cuadro de texto por cuenta: se pega ahí la lista de seguidores */
+function nuevaCuenta() {
+  const d = document.createElement('div');
+  d.className = 'cuenta';
+  d.style.cssText = 'border:1.5px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px';
+  d.innerHTML = '<div class="row" style="margin-bottom:6px"><input type="text" class="cNombre" placeholder="Nombre de la cuenta (ej. peluditosdoghairsalon)" style="flex:1;min-width:180px">' +
+    '<span class="cCuenta note" style="margin:0"></span><a href="#" class="cQuitar" style="color:inherit" title="Quitar cuenta">✕</a></div>' +
+    '<textarea class="cLista" placeholder="Pega aquí los seguidores, uno por línea" style="min-height:110px"></textarea>';
+  $('cuentas').appendChild(d);
 }
-$('fl').addEventListener('click', e => {
-  const i = e.target.dataset && e.target.dataset.i;
-  if (i === undefined) return;
-  e.preventDefault(); seguidores.splice(+i, 1); drawFollowers(); stats();
+function leerCuentas() {
+  seguidores.length = 0;
+  document.querySelectorAll('#cuentas .cuenta').forEach((d, i) => {
+    const texto = d.querySelector('.cLista').value;
+    const set = texto.trim() ? userList(texto) : new Set();
+    d.querySelector('.cCuenta').textContent = set.size ? set.size + ' seguidores leídos' : '';
+    if (set.size) seguidores.push({ name: d.querySelector('.cNombre').value.trim().replace(/^@/, '') || 'cuenta ' + (i + 1), set });
+  });
+}
+$('cuentas').addEventListener('input', () => { leerCuentas(); stats(); });
+$('cuentas').addEventListener('click', e => {
+  if (!e.target.classList.contains('cQuitar')) return;
+  e.preventDefault();
+  const d = e.target.closest('.cuenta');
+  if (document.querySelectorAll('#cuentas .cuenta').length > 1) d.remove();
+  else { d.querySelector('.cNombre').value = ''; d.querySelector('.cLista').value = ''; }
+  leerCuentas(); stats();
 });
-$('segFile').addEventListener('change', async e => {
-  for (const f of e.target.files) seguidores.push({ name: f.name.replace(/\.\w+$/, ''), set: userList(await f.text()) });
-  e.target.value = ''; drawFollowers(); stats();
-});
+$('addCuenta').addEventListener('click', nuevaCuenta);
+nuevaCuenta();
 
 /* participaciones aptas sin mirar a quién siguen */
 function candidatosBase(all) {
