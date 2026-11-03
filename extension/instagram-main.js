@@ -66,7 +66,9 @@
         continue;
       }
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
+      const texto = await r.text();
+      try { return JSON.parse(texto); }
+      catch (e) { throw new Error(texto.trimStart().startsWith('<') ? 'Instagram ha respondido con una página web en vez de datos' : 'respuesta no válida de Instagram'); }
     }
     throw new Error('Instagram limita las peticiones');
   }
@@ -150,7 +152,7 @@
     const id = (html.match(/profilePage_(\d+)/) || [])[1];
     if (!id) throw new Error('cuenta no encontrada');
     const m = html.match(/content="([\d.,]+\s*[KkMm]?)\s*(?:seguidores|followers)/i);
-    return { id, total: contarSeguidores(m && m[1]) };
+    return { id, total: contarSeguidores(m && m[1]), privada: /"is_private":true/.test(html) };
   }
 
   /* Reparte la lista en varios trabajadores que van a la vez (se reducen a uno si Instagram pide frenar). */
@@ -194,6 +196,7 @@
       if (pag === 0 && c.total && maxPaginas && Math.ceil(c.total / Math.max(1, set.size)) > maxPaginas) return null;
       previo = max = sig;
       await sleep(ritmo.pausa);
+      if (pag === 599) set.truncada = true;
     }
     return set;
   }
@@ -206,7 +209,7 @@
       await enPool(cuentas, async c => {
         try {
           const d = await datosCuenta(c.nombre);
-          c.id = d.id; c.total = d.total; c.ok = true;
+          c.id = d.id; c.total = d.total; c.privada = d.privada; c.ok = true;
         } catch (e) {
           c.motivo = e.message;
           if (e.message === 'cuenta no encontrada') return; // no existe: no hace falta insistir por otra vía
@@ -239,13 +242,27 @@
         }
         let hechos = 0;
         await enPool(dudosos, async usr => {
-          if (c.fallo) return;
+          if (c.fallo || c.sinBusqueda) return;
           try { if (await sigueA(c.id, usr)) c.siguen.push(usr); }
-          catch (e) { c.fallo = e.message; return; }
+          catch (e) { if (/no permite buscar/.test(e.message)) c.sinBusqueda = true; else c.fallo = e.message; return; }
           if (++hechos % 5 === 0 || hechos === dudosos.length) informar('progreso', 'Comprobando @' + c.nombre + '... ' + hechos + ' de ' + dudosos.length + ' personas');
           await sleep(ritmo.pausa);
         });
-        if (c.fallo) { c.ok = false; c.motivo = c.fallo; }
+        if (c.sinBusqueda && !c.fallo) { // plan B: sin búsqueda, se lee la lista completa de la cuenta
+          try {
+            informar('progreso', 'Instagram no deja buscar en @' + c.nombre + ': leo su lista de seguidores completa…');
+            const lista = await listaSeguidores(c, 0);
+            const completa = !lista.truncada && (!c.total || lista.size >= c.total * 0.9);
+            if (!completa) throw new Error('Instagram no deja leer la lista completa de seguidores de esta cuenta');
+            c.siguen = mirar.filter(u => lista.has(u));
+          } catch (e) { c.fallo = e.message; }
+        }
+        if (c.fallo) { // se explica la causa más probable en lenguaje llano
+          c.ok = false;
+          c.motivo = c.privada ? 'es una cuenta privada: Instagram solo deja ver sus seguidores a quien la sigue'
+            : /página web en vez de datos/.test(c.fallo) ? 'Instagram no ha dado su lista de seguidores (puede ser un límite temporal; prueba más tarde)'
+            : c.fallo;
+        }
         if (datos.cortar && c.ok) { const f = new Set(c.siguen); vivos = vivos.filter(u => f.has(u)); }
       }
       informar('seguidores', JSON.stringify(cuentas.map(c => ({ nombre: c.nombre, ok: c.ok, motivo: c.motivo, siguen: c.siguen }))));

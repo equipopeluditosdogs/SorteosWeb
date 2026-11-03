@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sorteo: extractor de comentarios",
-  "version": "1.5",
+  "version": "1.6",
   "description": "Abre una publicación de Instagram en segundo plano, extrae sus comentarios y los envía a tu página de sorteos.",
   "permissions": [
     "storage"
