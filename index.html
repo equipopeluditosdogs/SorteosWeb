@@ -110,13 +110,13 @@
     </div>
     <div class="row" style="margin-top:12px">
       <button class="main" id="autoBtn" type="button" style="padding:12px 24px;font-size:.98rem">⚡ Cargar comentarios automáticamente</button>
-      <button class="sec" id="dlExt" type="button">⬇ Descargar extensión</button>
     </div>
     <p class="note" id="extEstado" style="margin:8px 0 0">Buscando la extensión…</p>
     <details class="note" style="margin:6px 0 12px">
       <summary style="cursor:pointer;font-weight:600">¿Primera vez? Instala la extensión</summary>
-      <ol style="margin:8px 0 0;padding-left:20px">
-        <li>Pulsa <b>Descargar extensión</b> y descomprime el ZIP.</li>
+      <div class="row" style="margin-top:10px"><button class="sec" id="dlExt" type="button">⬇ Descargar extensión</button></div>
+      <ol style="margin:10px 0 0;padding-left:20px">
+        <li>Descomprime el ZIP descargado.</li>
         <li>En Chrome abre <b>chrome://extensions</b> y activa «Modo de desarrollador».</li>
         <li>Pulsa «Cargar descomprimida» y elige la carpeta descomprimida.</li>
         <li>Entra en Instagram en ese Chrome y recarga esta página.</li>
@@ -334,10 +334,10 @@ $('print').addEventListener('click', () => window.print());
     } else if (d.sorteo === 'error') { $('autoBtn').disabled = false; $('aviso').textContent = d.texto; }
   });
   window.postMessage({ sorteo: 'ping' }, '*');
-  setTimeout(() => { if (!extOk) $('extEstado').textContent = 'Extensión no instalada. Descárgala con el botón de arriba.'; }, 1500);
+  setTimeout(() => { if (!extOk) $('extEstado').textContent = 'Extensión no instalada. Despliega «¿Primera vez?» para descargarla.'; }, 1500);
   $('autoBtn').addEventListener('click', () => {
     if (!urlValida()) { $('aviso').textContent = 'Escribe primero el enlace de la publicación (instagram.com/p/...).'; return; }
-    if (!extOk) { $('aviso').textContent = 'Primero instala la extensión: pulsa «Descargar extensión».'; return; }
+    if (!extOk) { $('aviso').textContent = 'Primero instala la extensión: despliega «¿Primera vez?» y pulsa «Descargar extensión».'; return; }
     $('autoBtn').disabled = true;
     $('aviso').textContent = 'Abriendo la publicación en una ventana aparte…';
     window.postMessage({ sorteo: 'extraer', url: $('postUrl').value.trim() }, '*');
