@@ -1,10 +1,13 @@
-// Mensajero: recibe la orden del fondo y la pasa al código que corre dentro de la página (instagram-main.js),
+// Mensajero: recibe las órdenes del fondo y las pasa al código que corre dentro de la página (instagram-main.js),
 // y reenvía su progreso y su resultado al fondo.
-let ordenDada = false;
+const dadas = {};
 chrome.runtime.onMessage.addListener((m, sender, responder) => {
-  if (m && m.tipo === 'iniciar') {
+  if (m && (m.tipo === 'iniciar' || m.tipo === 'comprobar')) {
     responder({ ok: true });
-    if (!ordenDada) { ordenDada = true; window.postMessage({ sorteoCmd: 'iniciar' }, '*'); }
+    if (!dadas[m.tipo]) {
+      dadas[m.tipo] = true;
+      window.postMessage({ sorteoCmd: m.tipo, datos: m.datos }, '*');
+    }
   }
 });
 window.addEventListener('message', e => {

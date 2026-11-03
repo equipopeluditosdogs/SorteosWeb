@@ -3,9 +3,11 @@
 // Si esa vía falla, usa el método de scroll (necesita la pestaña al frente).
 // Habla con instagram.js (el mensajero) mediante window.postMessage.
 (() => {
-  let enMarcha = false;
+  let enMarcha = false, comprobando = false;
   window.addEventListener('message', e => {
-    if (e.source === window && e.data && e.data.sorteoCmd === 'iniciar' && !enMarcha) { enMarcha = true; extraer(); }
+    if (e.source !== window || !e.data) return;
+    if (e.data.sorteoCmd === 'iniciar' && !enMarcha) { enMarcha = true; extraer(); }
+    if (e.data.sorteoCmd === 'comprobar' && !comprobando) { comprobando = true; comprobar(e.data.datos || {}); }
   });
 
   const informar = (tipo, texto) => window.postMessage({ sorteoExt: 1, tipo, texto }, '*');
@@ -125,6 +127,57 @@
     }
 
     return ['#autor\t' + autor, '#diag\t' + esperados + '\t' + vistos.size, 'usuario\tcomentario', ...vistos.values()].join('\n');
+  }
+
+
+  /* ---------- 3. Comprobar quién sigue a unas cuentas ---------- */
+  async function sigueA(id, usuario) {
+    let max = '';
+    for (let pag = 0; pag < 3; pag++) {
+      const j = await api('/api/v1/friendships/' + id + '/followers/?count=50&search_surface=follow_list_page&query=' + encodeURIComponent(usuario) + (max ? '&max_id=' + encodeURIComponent(max) : ''));
+      const us = Array.isArray(j.users) ? j.users : [];
+      if (us.some(x => String(x.username).toLowerCase() === usuario)) return true;
+      // si devuelve una lista larga sin nada parecido, Instagram ha ignorado la búsqueda: no se puede fiar el "no"
+      if (us.length >= 10 && !us.some(x => (String(x.username) + ' ' + String(x.full_name || '')).toLowerCase().includes(usuario.slice(0, 2)))) {
+        throw new Error('Instagram no permite buscar entre los seguidores de esta cuenta');
+      }
+      if (!j.next_max_id || us.length === 0) return false;
+      max = j.next_max_id;
+      await sleep(PAUSA);
+    }
+    return false;
+  }
+
+  async function comprobar(datos) {
+    try {
+      const usuarios = (datos.usuarios || []).map(u => String(u).toLowerCase());
+      const cuentas = (datos.cuentas || []).map(n => ({ nombre: n, ok: false, motivo: '', siguen: [] }));
+      for (const c of cuentas) {
+        try {
+          const j = await api('/api/v1/users/web_profile_info/?username=' + encodeURIComponent(c.nombre));
+          const u = j && j.data && j.data.user;
+          if (!u || !u.id) throw new Error('cuenta no encontrada');
+          c.id = u.id; c.ok = true;
+        } catch (e) { c.motivo = e.message; }
+        await sleep(PAUSA);
+      }
+      const buenas = cuentas.filter(c => c.ok);
+      let hechos = 0;
+      for (const usr of usuarios) {
+        for (const c of buenas) {
+          if (!c.ok) continue;
+          try {
+            if (await sigueA(c.id, usr)) c.siguen.push(usr);
+            else if (datos.cortar) break; // ya no cumple: no hace falta mirar las demás cuentas
+          } catch (e) { c.ok = false; c.motivo = e.message; }
+          await sleep(PAUSA);
+        }
+        if (++hechos % 3 === 0 || hechos === usuarios.length) informar('progreso', 'Comprobando seguidores... ' + hechos + ' de ' + usuarios.length + ' personas');
+      }
+      informar('seguidores', JSON.stringify(cuentas.map(c => ({ nombre: c.nombre, ok: c.ok, motivo: c.motivo, siguen: c.siguen }))));
+    } catch (e) {
+      informar('error', 'Error al comprobar seguidores: ' + e.message);
+    }
   }
 
   /* ---------- 2. Método de reserva: hacer scroll en el panel (necesita la pestaña al frente) ---------- */

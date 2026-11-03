@@ -8,12 +8,16 @@ chrome.runtime.onMessage.addListener((m, sender) => {
     if (m.tipo === 'extraer' && sender.tab) {
       const tab = await chrome.tabs.create({ url: m.url, active: false });
       await guardar('t' + tab.id, { origen: sender.tab.id });
-      iniciar(tab.id);
+      iniciar(tab.id, { tipo: 'iniciar' });
+    } else if (m.tipo === 'comprobar' && sender.tab) {
+      const tab = await chrome.tabs.create({ url: 'https://www.instagram.com/', active: false });
+      await guardar('t' + tab.id, { origen: sender.tab.id });
+      iniciar(tab.id, { tipo: 'comprobar', datos: m.datos });
     } else if (m.tipo === 'primer-plano' && sender.tab) {
       // la vía rápida ha fallado: el método de scroll necesita la pestaña visible
       chrome.tabs.update(sender.tab.id, { active: true }).catch(() => {});
       chrome.windows.update(sender.tab.windowId, { focused: true }).catch(() => {});
-    } else if (['progreso', 'resultado', 'error'].includes(m.tipo) && sender.tab) {
+    } else if (['progreso', 'resultado', 'error', 'seguidores'].includes(m.tipo) && sender.tab) {
       const info = await leer('t' + sender.tab.id);
       if (!info) return;
       chrome.tabs.sendMessage(info.origen, { sorteo: m.tipo, texto: m.texto }).catch(() => {});
@@ -23,11 +27,11 @@ chrome.runtime.onMessage.addListener((m, sender) => {
 });
 
 // el content script de Instagram tarda en estar listo: se le llama hasta que responda
-async function iniciar(tabId) {
+async function iniciar(tabId, mensaje) {
   for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 1500));
     try {
-      const r = await chrome.tabs.sendMessage(tabId, { tipo: 'iniciar' });
+      const r = await chrome.tabs.sendMessage(tabId, mensaje);
       if (r && r.ok) return;
     } catch (e) {}
   }
