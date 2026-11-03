@@ -61,7 +61,7 @@
   a.filebtn { display:inline-block; text-decoration:none; cursor:grab; }
   #fname { font-size:.85rem; color:var(--muted); }
   #stats { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
-  #stats span { background:var(--crema); color:var(--verde-osc); border-radius:999px; padding:4px 12px; font-size:.82rem; font-weight:600; }
+  #stats span, #fl span { background:var(--crema); color:var(--verde-osc); border-radius:999px; padding:4px 12px; font-size:.82rem; font-weight:600; }
   #out { margin-top:18px; }
   .winner { display:flex; gap:14px; align-items:center; padding:14px 16px; border:1.5px solid var(--line); border-radius:var(--radio); margin-bottom:10px; background:#fff; animation:pop .4s ease both; }
   .winner.first { border-color:transparent; background:linear-gradient(#fff,#fff) padding-box, var(--grad) border-box; border:2px solid transparent; box-shadow:0 8px 24px rgba(122,135,69,.22); }
@@ -148,6 +148,13 @@
     <div class="check"><input type="checkbox" id="dedup"><label for="dedup">Una sola participación por usuario (si no, cada comentario es una oportunidad más)</label></div>
     <div style="margin-top:16px"><label for="autor">Cuenta que ha hecho la publicación (sus comentarios no cuentan)</label><input type="text" id="autor" placeholder="tu_cuenta"><p class="note" id="autorHint" style="margin:6px 0 0"></p></div>
     <div style="margin-top:12px"><label for="excl">Excluir usuarios (separados por comas, sin @)</label><input type="text" id="excl" placeholder="tu_cuenta, colaborador1"></div>
+    <div style="margin-top:16px">
+      <label>Cuentas que hay que seguir (opcional)</label>
+      <p class="note" style="margin:0 0 8px">Sube la lista de seguidores de cada cuenta. En Instagram: Configuración → Centro de cuentas → Tu información y permisos → Descargar tu información → Seguidores. Nombra cada archivo como la cuenta.</p>
+      <label class="filebtn">👥 Añadir listas de seguidores<input type="file" id="segFile" accept=".json,.html,.txt,.csv" multiple></label>
+      <div id="fl" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      <div class="check"><input type="checkbox" id="soloSeg" checked><label for="soloSeg">Solo participan quienes sigan a todas</label></div>
+    </div>
   </section>
 
   <section class="card">
@@ -205,7 +212,48 @@ const tip = c => {
 };
 const mentions = (t, self) => new Set((t.match(/@[\w.]+/g) || []).map(clean).filter(u => u && u !== self)).size;
 
-function candidates(all) {
+/* listas de seguidores (exportación oficial de Instagram): una por cada cuenta que hay que seguir */
+const seguidores = [];
+function userList(text) {
+  const set = new Set();
+  try {
+    (function walk(o) {
+      if (Array.isArray(o)) o.forEach(walk);
+      else if (o && typeof o === 'object') {
+        if (typeof o.value === 'string') set.add(clean(o.value));
+        Object.values(o).forEach(walk);
+      }
+    })(JSON.parse(text));
+    if (set.size) return set;
+  } catch (e) {}
+  if (/instagram\.com\//i.test(text)) {
+    for (const m of text.matchAll(/instagram\.com\/(?:_u\/)?([\w.]+)/gi)) set.add(clean(m[1]));
+    set.delete('');
+    if (set.size) return set;
+  }
+  text.split(/[\n,;]/).map(clean).filter(Boolean).forEach(u => set.add(u));
+  return set;
+}
+const nSigue = c => seguidores.filter(s => s.set.has(c.user)).length;
+const siguenTodas = c => nSigue(c) === seguidores.length;
+const textoSigue = c => seguidores.length
+  ? (siguenTodas(c) ? '✔ Sigue a las ' + seguidores.length + ' cuentas' : 'Sigue a ' + nSigue(c) + ' de ' + seguidores.length) : '';
+function drawFollowers() {
+  $('fl').innerHTML = seguidores.map((s, i) =>
+    '<span>' + esc(s.name) + ': ' + s.set.size + ' seguidores <a href="#" data-i="' + i + '" style="color:inherit">✕</a></span>').join('');
+}
+$('fl').addEventListener('click', e => {
+  const i = e.target.dataset && e.target.dataset.i;
+  if (i === undefined) return;
+  e.preventDefault(); seguidores.splice(+i, 1); drawFollowers(); stats();
+});
+$('segFile').addEventListener('change', async e => {
+  for (const f of e.target.files) seguidores.push({ name: f.name.replace(/\.\w+$/, ''), set: userList(await f.text()) });
+  e.target.value = ''; drawFollowers(); stats();
+});
+
+/* participaciones aptas sin mirar a quién siguen */
+function candidatosBase(all) {
   const excl = new Set($('excl').value.split(',').concat($('autor').value).map(clean).filter(Boolean));
   const min = +$('minMen').value || 0;
   let list = all.filter(c => !excl.has(c.user) && mentions(c.text, c.user) >= min);
@@ -214,6 +262,10 @@ function candidates(all) {
     list = list.filter(c => !seen.has(c.user) && seen.add(c.user));
   }
   return list;
+}
+function candidates(all) {
+  const list = candidatosBase(all);
+  return seguidores.length && $('soloSeg').checked ? list.filter(siguenTodas) : list;
 }
 
 function rnd(n) { // entero uniforme en [0,n) sin sesgo
@@ -229,13 +281,17 @@ function stats() {
     $('autor').value = marca[1]; $('autor').dataset.auto = marca[1];
   }
   const all = parse($('raw').value), c = candidates(all);
+  const base = seguidores.length ? candidatosBase(all) : [];
+  const personasBase = new Set(base.map(x => x.user)).size;
+  const personasSiguen = new Set(base.filter(siguenTodas).map(x => x.user)).size;
   $('autorHint').textContent = all.length && !$('autor').value.trim()
     ? `Pista: el primer comentario leído es de @${all[0].user}, que suele ser quien publica (su descripción).` : '';
   $('stats').innerHTML = all.length
-    ? `<span>${all.length} comentarios</span><span>${new Set(all.map(x => x.user)).size} usuarios</span><span>${c.length} participaciones válidas</span><span>${new Set(c.map(x => x.user)).size} personas participando</span>`
+    ? `<span>${all.length} comentarios</span><span>${new Set(all.map(x => x.user)).size} usuarios</span><span>${c.length} participaciones válidas</span><span>${new Set(c.map(x => x.user)).size} personas participando</span>` +
+      (seguidores.length ? `<span>${personasSiguen} de ${personasBase} personas aptas siguen a las ${seguidores.length} cuentas</span>` : '')
     : '';
 }
-['raw','nWin','minMen','dedup','excl','autor'].forEach(id => $(id).addEventListener('input', stats));
+['raw','nWin','minMen','dedup','excl','autor','soloSeg'].forEach(id => $(id).addEventListener('input', stats));
 async function sha(s) {
   if (!(crypto.subtle && crypto.subtle.digest)) { // contexto no seguro: huella simple (FNV-1a)
     let h = 0x811c9dc5;
@@ -298,7 +354,7 @@ $('go').addEventListener('click', async () => {
     return `<div class="pod p${i}" style="animation-delay:${(2 - Math.min(i, 2)) * 200}ms">
       <div class="medal">${medallas[i] || ''}</div>
       ${PREMIOS[i] ? `<img class="premio" src="${PREMIOS[i]}" alt="Premio ${i + 1}">` : ''}
-      <div class="ganador" title="${tip(g)}"><div class="u">@${esc(g.user)}</div></div>
+      <div class="ganador" title="${tip(g)}"><div class="u">@${esc(g.user)}</div>${seguidores.length ? '<div class="c">' + textoSigue(g) + '</div>' : ''}</div>
       <div class="sup" ${s ? `title="${tip(s)}"` : ''}><b>Suplente</b>${s ? '@' + esc(s.user) : '—'}</div>
       <div class="base">${i + 1}.º</div></div>`;
   }).join('') + '</div>' +
