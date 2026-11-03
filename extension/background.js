@@ -3,7 +3,8 @@
 const guardar = (k, v) => chrome.storage.session.set({ [k]: v });
 const leer = async k => (await chrome.storage.session.get(k))[k];
 
-chrome.runtime.onMessage.addListener((m, sender) => {
+chrome.runtime.onMessage.addListener((m, sender, responder) => {
+  responder({ ok: true }); // acuse de recibo para la página
   (async () => {
     if (m.tipo === 'extraer' && sender.tab) {
       const tab = await chrome.tabs.create({ url: m.url, active: false });
