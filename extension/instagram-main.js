@@ -133,6 +133,26 @@
 
 
   /* ---------- 3. Comprobar quién sigue a unas cuentas ---------- */
+  /* "1,201" · "1.201" · "12.5K" · "1,2 M" -> número */
+  function contarSeguidores(txt) {
+    if (!txt) return 0;
+    const t = String(txt).trim();
+    const k = /k/i.test(t) ? 1e3 : /m/i.test(t) ? 1e6 : 1;
+    if (k > 1) return Math.round(parseFloat(t.replace(/[KkMm\s]/g, '').replace(',', '.')) * k) || 0;
+    return parseInt(t.replace(/[.,\s]/g, ''), 10) || 0;
+  }
+
+  /* Identificador y nº de seguidores leyendo la página de perfil, que sí responde cuando la consulta de perfil está limitada. */
+  async function datosCuenta(nombre) {
+    const r = await fetch('/' + encodeURIComponent(nombre) + '/', { credentials: 'include' });
+    if (!r.ok) throw new Error(r.status === 404 ? 'cuenta no encontrada' : 'HTTP ' + r.status);
+    const html = await r.text();
+    const id = (html.match(/profilePage_(\d+)/) || [])[1];
+    if (!id) throw new Error('cuenta no encontrada');
+    const m = html.match(/content="([\d.,]+\s*[KkMm]?)\s*(?:seguidores|followers)/i);
+    return { id, total: contarSeguidores(m && m[1]) };
+  }
+
   /* Reparte la lista en varios trabajadores que van a la vez (se reducen a uno si Instagram pide frenar). */
   async function enPool(items, fn) {
     let i = 0;
@@ -160,7 +180,7 @@
   }
 
   /* Lee la lista de seguidores de la cuenta por páginas (mucho más rápido si no es enorme). */
-  async function listaSeguidores(c) {
+  async function listaSeguidores(c, maxPaginas) {
     const set = new Set();
     let max = '', previo = null;
     for (let pag = 0; pag < 600; pag++) {
@@ -170,6 +190,8 @@
       let sig = j.next_max_id || '';
       if (typeof sig !== 'string') sig = JSON.stringify(sig);
       if (!sig || sig === previo) break;
+      // con el tamaño real de página se recalcula: si salen demasiadas consultas, mejor buscar persona a persona
+      if (pag === 0 && c.total && maxPaginas && Math.ceil(c.total / Math.max(1, set.size)) > maxPaginas) return null;
       previo = max = sig;
       await sleep(ritmo.pausa);
     }
@@ -183,21 +205,26 @@
       const cuentas = (datos.cuentas || []).map(n => ({ nombre: n, ok: false, motivo: '', siguen: [], total: 0 }));
       await enPool(cuentas, async c => {
         try {
-          const j = await api('/api/v1/users/web_profile_info/?username=' + encodeURIComponent(c.nombre));
-          const u = j && j.data && j.data.user;
-          if (!u || !u.id) throw new Error('cuenta no encontrada');
-          c.id = u.id; c.ok = true;
-          c.total = (u.edge_followed_by && u.edge_followed_by.count) || u.follower_count || 0;
-        } catch (e) { c.motivo = e.message; }
+          const d = await datosCuenta(c.nombre);
+          c.id = d.id; c.total = d.total; c.ok = true;
+        } catch (e) {
+          c.motivo = e.message;
+          if (e.message === 'cuenta no encontrada') return; // no existe: no hace falta insistir por otra vía
+          try { // plan B: la consulta de perfil (Instagram la limita a menudo)
+            const j = await api('/api/v1/users/web_profile_info/?username=' + encodeURIComponent(c.nombre));
+            const u = j && j.data && j.data.user;
+            if (u && u.id) { c.id = u.id; c.ok = true; c.motivo = ''; c.total = (u.edge_followed_by && u.edge_followed_by.count) || u.follower_count || 0; }
+          } catch (e2) { /* se queda el motivo del primer intento */ }
+        }
         await sleep(ritmo.pausa);
       });
       const buenas = cuentas.filter(c => c.ok).sort((a, b) => a.total - b.total);
 
       // 1) las cuentas cuya lista compensa leer (bastantes menos consultas que ir persona por persona), todas a la vez
-      const compensa = c => c.total > 0 && Math.ceil(c.total / 100) * 2 <= todos.length;
+      const compensa = c => c.total > 0 && Math.ceil(c.total / 25) * 3 <= todos.length; // páginas de 25: leer la lista solo si son pocas consultas
       const conLista = buenas.filter(compensa);
       await Promise.all(conLista.map(async c => {
-        try { c.lista = await listaSeguidores(c); c.completa = c.lista.size >= c.total * 0.9; }
+        try { c.lista = await listaSeguidores(c, Math.ceil(todos.length / 2)); c.completa = !!c.lista && c.lista.size >= c.total * 0.9; }
         catch (e) { c.lista = null; }
       }));
 
