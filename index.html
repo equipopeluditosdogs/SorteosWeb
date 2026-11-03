@@ -62,6 +62,39 @@
   .estad td:last-child { text-align:right; font-weight:600; white-space:nowrap; }
   .estad tr.menos td { color:var(--muted); }
   .estad tr.total td { font-weight:700; color:var(--verde-osc); border-bottom:0; background:var(--crema); }
+  /* Opciones: grupos, contadores y previsualización del podio */
+  .grupo { margin-top:16px; padding:14px; border:1.5px solid var(--line); border-radius:var(--radio); background:#fcfcfa; }
+  .grupo h3 { margin:0 0 10px; font-size:1.02rem; }
+  .hint { font-size:.82rem; color:var(--muted); font-weight:400; }
+  label.hint { display:block; }
+  .opc { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .opc:last-child { border-bottom:0; }
+  .opc-txt { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .opc-txt label { margin:0; color:var(--ink); font-size:.95rem; font-weight:600; }
+  @media (max-width:560px) { .opc.apila { flex-direction:column; align-items:flex-start; gap:8px; } .grupo { padding:12px; } }
+  .campo { margin-top:12px; }
+  .campo label { color:var(--ink); font-weight:600; font-size:.95rem; }
+  .campo .hint { display:block; margin-top:4px; }
+  .stepper { display:flex; align-items:center; flex:none; border:1.5px solid var(--line); border-radius:999px; background:#fff; overflow:hidden; }
+  .stepper button { width:38px; height:38px; padding:0; border-radius:0; background:#fff; color:var(--verde-osc); font-size:1.25rem; line-height:1; border:0; }
+  .stepper button:hover { background:var(--crema); }
+  .stepper input { width:48px; padding:0; border:0; border-radius:0; text-align:center; font-weight:700; background:#fff; -moz-appearance:textfield; }
+  .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  input[type=checkbox].interr { appearance:none; -webkit-appearance:none; flex:none; width:48px; height:28px; border-radius:999px; background:#d6d6d0; position:relative; cursor:pointer; transition:background .2s; accent-color:initial; }
+  input[type=checkbox].interr::after { content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:left .2s; }
+  input[type=checkbox].interr:checked { background:var(--verde-med); }
+  input[type=checkbox].interr:checked::after { left:23px; }
+  input[type=checkbox].interr:focus-visible { outline:2px solid var(--verde-osc); outline-offset:2px; }
+  #prevPodio { padding:12px; border-radius:14px; background:var(--crema); }
+  .pod .foto-wrap { display:flex; flex-direction:column; gap:6px; margin:4px 0 8px; }
+  .pod .foto-wrap img.premio { margin:0; }
+  .pod .premio.vacio { aspect-ratio:1; display:grid; place-content:center; justify-items:center; gap:2px; border:2px dashed var(--verde); border-radius:14px; color:var(--muted); font-size:1.6rem; background:#fff; }
+  .pod .premio.vacio span { font-size:.78rem; }
+  .foto-botones { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .mini { display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border:1.5px solid var(--line); border-radius:999px; background:#fff; color:var(--ink); font:inherit; font-size:.78rem; font-weight:600; cursor:pointer; }
+  .mini:hover { border-color:var(--verde-med); background:var(--crema); }
+  .mini input { display:none; }
+  .pod .ganador .u.fantasma { color:var(--muted); font-weight:500; }
   .step { display:inline-grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--grad); color:#fff; font-size:.85rem; font-weight:700; }
   .note { overflow-wrap:anywhere; font-size:.88rem; color:var(--muted); margin:0 0 12px; }
   textarea { width:100%; min-height:200px; border:1.5px solid var(--line); border-radius:12px; padding:12px; font:inherit; font-size:.92rem; resize:vertical; background:#fcfbff; transition:border-color .15s, box-shadow .15s; }
@@ -116,6 +149,7 @@
     .pod { display:grid; grid-template-columns:128px 1fr; grid-template-areas:"img medal" "img gan" "img sup"; column-gap:12px; align-items:center; text-align:left; }
     .pod.p0 { order:1; } .pod.p1 { order:2; } .pod.p2 { order:3; }
     .pod img.premio { grid-area:img; margin:0; }
+    .pod .foto-wrap { grid-area:img; margin:0; }
     .pod .medal { grid-area:medal; text-align:left; font-size:1.6rem; }
     .pod .ganador { grid-area:gan; text-align:left; }
     .pod .sup { grid-area:sup; text-align:left; }
@@ -164,23 +198,56 @@
 
   <section class="card noprint">
     <h2><span class="step">2</span> Opciones</h2>
-    <div class="grid" style="margin-top:12px">
-      <div><label for="nWin">Puestos del podio (cada uno con un suplente)</label><input type="number" id="nWin" value="3" min="1"></div>
-      <div><label for="minMen">Menciones mínimas (@)</label><input type="number" id="minMen" value="0" min="0"></div>
+    <p class="hint" style="margin:4px 0 0">Ajusta las reglas del sorteo. Los cambios se guardan solos.</p>
+
+    <div class="grupo">
+      <h3>🏆 Podio</h3>
+      <div class="opc apila">
+        <div class="opc-txt"><label for="nWin">Puestos del podio</label><span class="hint">Cada puesto tiene también un suplente.</span></div>
+        <div class="stepper"><button type="button" data-para="nWin" data-paso="-1" aria-label="Menos">−</button><input type="number" id="nWin" value="3" min="1" max="10"><button type="button" data-para="nWin" data-paso="1" aria-label="Más">+</button></div>
+      </div>
+      <p class="hint" style="margin:14px 0 8px">Así quedará el podio. Pulsa <b>Cambiar foto</b> bajo un puesto para poner la imagen de su premio.</p>
+      <div id="prevPodio"></div>
+      <p class="hint" id="fotoInfo" style="margin:8px 0 0"></p>
     </div>
-    <div class="check"><input type="checkbox" id="dedup"><label for="dedup">Una sola participación por usuario (si no, cada comentario es una oportunidad más)</label></div>
-    <div style="margin-top:16px">
-      <label for="cuentasSeg">Cuentas que hay que seguir (opcional)</label>
+
+    <div class="grupo">
+      <h3>✅ Quién puede participar</h3>
+      <div class="opc apila">
+        <div class="opc-txt"><label for="minMen">Personas a las que hay que etiquetar</label><span class="hint">En cada comentario. Con 0 no hace falta etiquetar a nadie.</span></div>
+        <div class="stepper"><button type="button" data-para="minMen" data-paso="-1" aria-label="Menos">−</button><input type="number" id="minMen" value="0" min="0" max="10"><button type="button" data-para="minMen" data-paso="1" aria-label="Más">+</button></div>
+      </div>
+      <div class="opc">
+        <div class="opc-txt"><label for="dedup">Cada persona participa una sola vez</label><span class="hint">Si lo dejas sin activar, cada comentario cuenta como una oportunidad más.</span></div>
+        <input type="checkbox" id="dedup" class="interr">
+      </div>
+      <div class="campo">
+        <label for="autor">Cuenta que publica el sorteo</label>
+        <input type="text" id="autor" placeholder="tu_cuenta">
+        <span class="hint">Sus comentarios no participan. Se rellena sola al cargar los comentarios.</span>
+        <p class="note" id="autorHint" style="margin:4px 0 0"></p>
+      </div>
+      <div class="campo">
+        <label for="excl">Excluir a otras personas</label>
+        <input type="text" id="excl" placeholder="colaborador1, otra_cuenta">
+        <span class="hint">Cuentas separadas por comas, sin @.</span>
+      </div>
+    </div>
+
+    <div class="grupo">
+      <h3>👥 Cuentas que hay que seguir <span class="hint">(opcional)</span></h3>
+      <label for="cuentasSeg" class="hint" style="margin-bottom:6px">Escribe las cuentas de Instagram separadas por comas y pulsa Comprobar. Puede tardar unos minutos.</label>
       <div class="row">
         <input type="text" id="cuentasSeg" placeholder="peluditosdoghairsalon, nordicofotografiaanimal, robury_tattoo" style="flex:1;min-width:220px">
         <button class="sec" id="comprobarSeg" type="button">🔎 Comprobar quién las sigue</button>
         <button class="sec" id="cancelarSeg" type="button" style="display:none">✖ Cancelar</button>
       </div>
       <p class="note" id="segEstado" style="margin:8px 0 0"></p>
-      <div class="check"><input type="checkbox" id="soloSeg" checked><label for="soloSeg">Solo participan quienes sigan a todas</label></div>
+      <div class="opc">
+        <div class="opc-txt"><label for="soloSeg">Solo participan quienes sigan a todas</label><span class="hint">Si lo desactivas, participan todos y se indica a quién sigue cada ganador.</span></div>
+        <input type="checkbox" id="soloSeg" class="interr" checked>
+      </div>
     </div>
-    <div style="margin-top:16px"><label for="autor">Cuenta que ha hecho la publicación (sus comentarios no cuentan)</label><input type="text" id="autor" placeholder="tu_cuenta"><p class="note" id="autorHint" style="margin:6px 0 0"></p></div>
-    <div style="margin-top:12px"><label for="excl">Excluir usuarios (separados por comas, sin @)</label><input type="text" id="excl" placeholder="tu_cuenta, colaborador1"></div>
   </section>
 
   <section class="card estad">
@@ -376,21 +443,10 @@ $('go').addEventListener('click', async () => {
   }
   const when = new Date();
   const hash = await sha(JSON.stringify(pool.map(c => c.user + '|' + c.text)));
-  const medallas = ['🥇', '🥈', '🥉'];
-  let orden = picked.slice(0, nW).map((_, i) => i);
-  if (nW === 3) orden = [1, 0, 2]; // 2.º | 1.º | 3.º, como un podio
-  $('out').innerHTML = `<div class="podio ${nW === 3 ? 'tres' : ''}">` + orden.map(i => {
-    const g = picked[i], s = picked[nW + i];
-    return `<div class="pod p${i}" style="animation-delay:${(2 - Math.min(i, 2)) * 200}ms">
-      <div class="medal">${medallas[i] || ''}</div>
-      ${PREMIOS[i] ? `<img class="premio" src="${PREMIOS[i]}" alt="Premio ${i + 1}">` : ''}
-      <div class="ganador" title="${tip(g)}"><div class="u">@${esc(g.user)}</div>${seguidores.length ? '<div class="c">' + textoSigue(g) + '</div>' : ''}</div>
-      <div class="sup" ${s ? `title="${tip(s)}"` : ''}><b>Suplente</b>${s ? '@' + esc(s.user) : '—'}</div>
-      <div class="base">${i + 1}.º</div></div>`;
-  }).join('') + '</div>' +
-    `<p class="meta">Sorteo realizado el ${when.toLocaleString('es-ES')} entre ${pool.length} participaciones. Huella de la lista (SHA-256): ${hash.slice(0, 16)}…</p>`;
+  const meta = `<p class="meta">Sorteo realizado el ${when.toLocaleString('es-ES')} entre ${pool.length} participaciones. Huella de la lista (SHA-256): ${hash.slice(0, 16)}…</p>`;
+  ultimoSorteo = { picked, nW, meta };
+  $('out').innerHTML = podioGanadores(picked, nW, true) + meta;
   $('print').style.display = ''; $('verGan').style.display = '';
-  ultimoSorteo = { picked, nW };
   confetti();
   abrirGanadores();
 });
@@ -521,6 +577,94 @@ $('modalGan').addEventListener('click', e => { if (e.target === $('modalGan')) c
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarGanadores(); });
 $('verGan').addEventListener('click', abrirGanadores);
 
+/* ---------- podio: fotos, previsualización y resultado ---------- */
+const MEDALLAS = ['🥇', '🥈', '🥉'];
+const ordenPodio = n => n === 3 ? [1, 0, 2] : Array.from({ length: n }, (_, i) => i); // con 3: 2.º | 1.º | 3.º
+
+/* fotos elegidas por el usuario: índice → imagen ('' = sin foto); lo que no está usa la foto original del premio */
+const FOTOS = 'sorteoFotos';
+let fotosPodio = {};
+try { fotosPodio = JSON.parse(localStorage.getItem(FOTOS) || '{}') || {}; } catch (e) { fotosPodio = {}; }
+const fotoDe = i => (String(i) in fotosPodio) ? fotosPodio[i] : (PREMIOS[i] || '');
+function guardarFotos() {
+  try { localStorage.setItem(FOTOS, JSON.stringify(fotosPodio)); $('fotoInfo').textContent = ''; }
+  catch (e) { $('fotoInfo').textContent = 'La foto se usa ahora, pero no he podido guardarla en este navegador (sin espacio).'; }
+}
+/* reduce la foto para que ocupe poco al guardarla */
+function reducirFoto(archivo) {
+  return new Promise((ok, mal) => {
+    const url = URL.createObjectURL(archivo), img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const k = Math.min(1, 720 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      ok(cv.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); mal(new Error('No he podido leer esa imagen. Prueba con un JPG o PNG.')); };
+    img.src = url;
+  });
+}
+
+/* el podio con los ganadores del sorteo */
+function podioGanadores(picked, nW, animar) {
+  return `<div class="podio ${nW === 3 ? 'tres' : ''}">` + ordenPodio(nW).map(i => {
+    const g = picked[i], s = picked[nW + i], foto = fotoDe(i);
+    return `<div class="pod p${i}" style="${animar ? 'animation-delay:' + (2 - Math.min(i, 2)) * 200 + 'ms' : 'animation:none'}">
+      <div class="medal">${MEDALLAS[i] || ''}</div>
+      ${foto ? `<img class="premio" src="${foto}" alt="Premio ${i + 1}">` : ''}
+      <div class="ganador" title="${tip(g)}"><div class="u">@${esc(g.user)}</div>${seguidores.length ? '<div class="c">' + textoSigue(g) + '</div>' : ''}</div>
+      <div class="sup" ${s ? `title="${tip(s)}"` : ''}><b>Suplente</b>${s ? '@' + esc(s.user) : '—'}</div>
+      <div class="base">${i + 1}.º</div></div>`;
+  }).join('') + '</div>';
+}
+function refrescarResultado() { // si ya hay sorteo hecho, se repinta con las fotos nuevas
+  if (ultimoSorteo) $('out').innerHTML = podioGanadores(ultimoSorteo.picked, ultimoSorteo.nW, false) + ultimoSorteo.meta;
+}
+
+/* previsualización: el mismo podio con huecos, y las fotos se pueden cambiar */
+function pintarPrevia() {
+  const n = Math.max(1, Math.min(10, +$('nWin').value || 1));
+  $('prevPodio').innerHTML = `<div class="podio ${n === 3 ? 'tres' : ''}">` + ordenPodio(n).map(i => {
+    const foto = fotoDe(i), hayOriginal = (String(i) in fotosPodio) && !!PREMIOS[i];
+    return `<div class="pod p${i}" style="animation:none">
+      <div class="medal">${MEDALLAS[i] || ''}</div>
+      <div class="foto-wrap">
+        ${foto ? `<img class="premio" src="${foto}" alt="Foto del puesto ${i + 1}">` : '<div class="premio vacio">📷<span>Sin foto</span></div>'}
+        <div class="foto-botones">
+          <label class="mini">📷 ${foto ? 'Cambiar foto' : 'Añadir foto'}<input type="file" accept="image/*" data-i="${i}"></label>
+          ${foto ? `<button type="button" class="mini" data-quitar="${i}" title="Quitar la foto">✕ Quitar</button>` : ''}
+          ${hayOriginal ? `<button type="button" class="mini" data-orig="${i}" title="Volver a la foto original">↺ Original</button>` : ''}
+        </div>
+      </div>
+      <div class="ganador"><div class="u fantasma">Ganador/a</div></div>
+      <div class="sup"><b>Suplente</b>—</div>
+      <div class="base">${i + 1}.º</div></div>`;
+  }).join('') + '</div>';
+}
+$('prevPodio').addEventListener('change', async e => {
+  const archivo = e.target.files && e.target.files[0];
+  if (!archivo || e.target.dataset.i === undefined) return;
+  try { fotosPodio[e.target.dataset.i] = await reducirFoto(archivo); guardarFotos(); }
+  catch (err) { $('fotoInfo').textContent = '✖ ' + err.message; return; }
+  pintarPrevia(); refrescarResultado();
+});
+$('prevPodio').addEventListener('click', e => {
+  const q = e.target.closest('[data-quitar]'), o = e.target.closest('[data-orig]');
+  if (q) fotosPodio[q.dataset.quitar] = '';
+  else if (o) delete fotosPodio[o.dataset.orig];
+  else return;
+  guardarFotos(); pintarPrevia(); refrescarResultado();
+});
+$('nWin').addEventListener('input', pintarPrevia);
+
+/* botones − y + de los contadores */
+document.querySelectorAll('.stepper button').forEach(b => b.addEventListener('click', () => {
+  const campo = $(b.dataset.para), min = +campo.min || 0, max = +campo.max || 999;
+  campo.value = Math.max(min, Math.min(max, (+campo.value || 0) + (+b.dataset.paso)));
+  campo.dispatchEvent(new Event('input', { bubbles: true }));
+}));
+
 /* ---------- estadísticas, datos guardados y descargas ---------- */
 const CLAVE = 'sorteoDatos';
 let restaurando = true, tGuardar = null;
@@ -644,6 +788,7 @@ $('borrarGuardado').addEventListener('click', () => {
 
 restaurar();
 restaurando = false;
+pintarPrevia();
 
 /* bloques plegables */
 document.querySelectorAll('main > section.card').forEach(sec => {
