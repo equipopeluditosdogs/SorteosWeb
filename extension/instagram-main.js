@@ -131,6 +131,7 @@
 
 
   /* ---------- 3. Comprobar quién sigue a unas cuentas ---------- */
+  /* Mira si UNA persona sigue a la cuenta, buscándola entre sus seguidores. */
   async function sigueA(id, usuario) {
     let max = '';
     for (let pag = 0; pag < 3; pag++) {
@@ -148,31 +149,61 @@
     return false;
   }
 
+  /* Lee la lista de seguidores de la cuenta por páginas (mucho más rápido si no es enorme). */
+  async function listaSeguidores(c) {
+    const set = new Set();
+    let max = '', previo = null;
+    for (let pag = 0; pag < 600; pag++) {
+      const j = await api('/api/v1/friendships/' + c.id + '/followers/?count=100' + (max ? '&max_id=' + encodeURIComponent(max) : ''));
+      (Array.isArray(j.users) ? j.users : []).forEach(x => set.add(String(x.username).toLowerCase()));
+      informar('progreso', 'Leyendo seguidores de @' + c.nombre + '... ' + set.size + (c.total ? ' de ' + c.total : ''));
+      let sig = j.next_max_id || '';
+      if (typeof sig !== 'string') sig = JSON.stringify(sig);
+      if (!sig || sig === previo) break;
+      previo = max = sig;
+      await sleep(PAUSA);
+    }
+    return set;
+  }
+
   async function comprobar(datos) {
     try {
-      const usuarios = (datos.usuarios || []).map(u => String(u).toLowerCase());
-      const cuentas = (datos.cuentas || []).map(n => ({ nombre: n, ok: false, motivo: '', siguen: [] }));
+      const todos = [...new Set((datos.usuarios || []).map(u => String(u).toLowerCase()))];
+      const cuentas = (datos.cuentas || []).map(n => ({ nombre: n, ok: false, motivo: '', siguen: [], total: 0 }));
       for (const c of cuentas) {
         try {
           const j = await api('/api/v1/users/web_profile_info/?username=' + encodeURIComponent(c.nombre));
           const u = j && j.data && j.data.user;
           if (!u || !u.id) throw new Error('cuenta no encontrada');
           c.id = u.id; c.ok = true;
+          c.total = (u.edge_followed_by && u.edge_followed_by.count) || u.follower_count || 0;
         } catch (e) { c.motivo = e.message; }
         await sleep(PAUSA);
       }
-      const buenas = cuentas.filter(c => c.ok);
-      let hechos = 0;
-      for (const usr of usuarios) {
-        for (const c of buenas) {
-          if (!c.ok) continue;
-          try {
-            if (await sigueA(c.id, usr)) c.siguen.push(usr);
-            else if (datos.cortar) break; // ya no cumple: no hace falta mirar las demás cuentas
-          } catch (e) { c.ok = false; c.motivo = e.message; }
-          await sleep(PAUSA);
-        }
-        if (++hechos % 3 === 0 || hechos === usuarios.length) informar('progreso', 'Comprobando seguidores... ' + hechos + ' de ' + usuarios.length + ' personas');
+      // primero las cuentas con menos seguidores: descartan a más gente y las demás se comprueban con menos personas
+      const buenas = cuentas.filter(c => c.ok).sort((a, b) => a.total - b.total);
+      let vivos = todos;
+      for (const c of buenas) {
+        const mirar = datos.cortar ? vivos : todos;
+        try {
+          // ¿compensa leer la lista entera? sí si son bastantes menos consultas que ir persona por persona
+          const paginas = Math.ceil(c.total / 100);
+          let lista = null, completa = false;
+          if (c.total > 0 && paginas * 2 <= mirar.length) {
+            try { lista = await listaSeguidores(c); completa = lista.size >= c.total * 0.9; }
+            catch (e) { lista = null; }
+          }
+          let hechos = 0;
+          for (const usr of mirar) {
+            if (lista && lista.has(usr)) c.siguen.push(usr);
+            else if (!lista || !completa) { // sin lista o lista incompleta: se confirma buscándola a ella
+              if (await sigueA(c.id, usr)) c.siguen.push(usr);
+              await sleep(PAUSA);
+            }
+            if (++hechos % 5 === 0) informar('progreso', 'Comprobando @' + c.nombre + '... ' + hechos + ' de ' + mirar.length + ' personas');
+          }
+        } catch (e) { c.ok = false; c.motivo = e.message; }
+        if (datos.cortar && c.ok) { const f = new Set(c.siguen); vivos = vivos.filter(u => f.has(u)); }
       }
       informar('seguidores', JSON.stringify(cuentas.map(c => ({ nombre: c.nombre, ok: c.ok, motivo: c.motivo, siguen: c.siguen }))));
     } catch (e) {
