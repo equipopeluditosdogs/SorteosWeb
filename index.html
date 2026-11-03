@@ -172,6 +172,12 @@
         <button class="sec" id="cancelarSeg" type="button" style="display:none">✖ Cancelar</button>
       </div>
       <p class="note" id="segEstado" style="margin:8px 0 0"></p>
+      <details class="note" style="margin:6px 0 8px">
+        <summary style="cursor:pointer;font-weight:600">¿Instagram no deja comprobarlo? Pega las listas de seguidores</summary>
+        <p style="margin:8px 0">Cada dueño de cuenta descarga su lista en Instagram: Configuración → Centro de cuentas → Tu información y permisos → Descargar tu información → Seguidores. Pega aquí el contenido de ese archivo, o un usuario por línea. Esta vía no hace ninguna consulta a Instagram.</p>
+        <div id="cuentasMan"></div>
+        <button class="sec" id="addMan" type="button">+ Añadir cuenta</button>
+      </details>
       <div class="check"><input type="checkbox" id="soloSeg" checked><label for="soloSeg">Solo participan quienes sigan a todas</label></div>
     </div>
     <div style="margin-top:16px"><label for="autor">Cuenta que ha hecho la publicación (sus comentarios no cuentan)</label><input type="text" id="autor" placeholder="tu_cuenta"><p class="note" id="autorHint" style="margin:6px 0 0"></p></div>
@@ -245,7 +251,29 @@ const tip = c => {
 const mentions = (t, self) => new Set((t.match(/@[\w.]+/g) || []).map(clean).filter(u => u && u !== self)).size;
 
 /* listas de seguidores (exportación oficial de Instagram): una por cada cuenta que hay que seguir */
-const seguidores = [];
+const seguidores = [];          // lo que usa el resto de la página: suma de las dos fuentes
+const segAuto = [], segManual = [];
+function unirSeg() { seguidores.length = 0; seguidores.push(...segAuto, ...segManual); }
+function userList(text) {
+  const set = new Set();
+  try {
+    (function walk(o) {
+      if (Array.isArray(o)) o.forEach(walk);
+      else if (o && typeof o === 'object') {
+        if (typeof o.value === 'string') set.add(clean(o.value));
+        Object.values(o).forEach(walk);
+      }
+    })(JSON.parse(text));
+    if (set.size) return set;
+  } catch (e) {}
+  if (/instagram\.com\//i.test(text)) {
+    for (const m of text.matchAll(/instagram\.com\/(?:_u\/)?([\w.]+)/gi)) set.add(clean(m[1]));
+    set.delete('');
+    if (set.size) return set;
+  }
+  text.split(/[\n,;]/).map(clean).filter(Boolean).forEach(u => set.add(u));
+  return set;
+}
 const lasCuentas = n => n === 1 ? 'la cuenta' : 'las ' + n + ' cuentas';
 const nSigue = c => seguidores.filter(s => s.set.has(c.user)).length;
 const siguenTodas = c => nSigue(c) === seguidores.length;
@@ -257,7 +285,39 @@ const textoSigue = c => {
 
 /* cuentas que hay que seguir: la extensión comprueba quién de los participantes las sigue */
 const cuentasSeg = () => [...new Set($('cuentasSeg').value.split(/[\s,;]+/).map(clean).filter(Boolean))];
-$('cuentasSeg').addEventListener('input', () => { seguidores.length = 0; $('segEstado').textContent = ''; stats(); });
+$('cuentasSeg').addEventListener('input', () => { segAuto.length = 0; unirSeg(); $('segEstado').textContent = ''; stats(); });
+
+/* listas pegadas a mano: un cuadro por cuenta */
+function nuevaMan() {
+  const d = document.createElement('div');
+  d.className = 'cuenta';
+  d.style.cssText = 'border:1.5px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px';
+  d.innerHTML = '<div class="row" style="margin-bottom:6px"><input type="text" class="cNombre" placeholder="Nombre de la cuenta (ej. peluditosdoghairsalon)" style="flex:1;min-width:180px">' +
+    '<span class="cCuenta note" style="margin:0"></span><a href="#" class="cQuitar" style="color:inherit" title="Quitar cuenta">✕</a></div>' +
+    '<textarea class="cLista" placeholder="Pega aquí los seguidores, uno por línea" style="min-height:110px"></textarea>';
+  $('cuentasMan').appendChild(d);
+}
+function leerMan() {
+  segManual.length = 0;
+  document.querySelectorAll('#cuentasMan .cuenta').forEach((d, i) => {
+    const texto = d.querySelector('.cLista').value;
+    const set = texto.trim() ? userList(texto) : new Set();
+    d.querySelector('.cCuenta').textContent = set.size ? set.size + (set.size === 1 ? ' seguidor leído' : ' seguidores leídos') : '';
+    if (set.size) segManual.push({ name: d.querySelector('.cNombre').value.trim().replace(/^@/, '') || 'cuenta ' + (i + 1), set });
+  });
+  unirSeg(); stats();
+}
+$('cuentasMan').addEventListener('input', leerMan);
+$('cuentasMan').addEventListener('click', e => {
+  if (!e.target.classList.contains('cQuitar')) return;
+  e.preventDefault();
+  const d = e.target.closest('.cuenta');
+  if (document.querySelectorAll('#cuentasMan .cuenta').length > 1) d.remove();
+  else { d.querySelector('.cNombre').value = ''; d.querySelector('.cLista').value = ''; }
+  leerMan();
+});
+$('addMan').addEventListener('click', nuevaMan);
+nuevaMan();
 
 /* participaciones aptas sin mirar a quién siguen */
 function candidatosBase(all) {
@@ -294,7 +354,7 @@ function stats() {
   $('autorHint').textContent = all.length && !$('autor').value.trim()
     ? `Pista: el primer comentario leído es de @${all[0].user}, que suele ser quien publica (su descripción).` : '';
   $('stats').innerHTML = all.length
-    ? `<span>${all.length} comentarios</span><span>${new Set(all.map(x => x.user)).size} usuarios</span><span>${c.length} participaciones válidas</span><span>${new Set(c.map(x => x.user)).size} personas participando</span>` +
+    ? `<span>${all.length} comentarios</span><span>${new Set(all.map(x => x.user)).size} usuarios</span><span>${c.length} ${c.length === 1 ? 'participación válida' : 'participaciones válidas'}</span><span>${new Set(c.map(x => x.user)).size === 1 ? '1 persona participando' : new Set(c.map(x => x.user)).size + ' personas participando'}</span>` +
       (seguidores.length ? `<span>${personasSiguen} de ${personasBase} personas aptas siguen a ${lasCuentas(seguidores.length)}</span>` : '')
     : '';
 }
@@ -430,15 +490,15 @@ $('print').addEventListener('click', () => window.print());
     else if (d.sorteo === 'seguidores') {
       finSeg();
       let res = []; try { res = JSON.parse(d.texto); } catch (e) {}
-      seguidores.length = 0;
+      segAuto.length = 0;
       const fallos = [];
-      res.forEach(c => c.ok ? seguidores.push({ name: c.nombre, set: new Set(c.siguen) }) : fallos.push('@' + c.nombre + ': ' + c.motivo));
-      stats();
+      res.forEach(c => c.ok ? segAuto.push({ name: c.nombre, set: new Set(c.siguen) }) : fallos.push('@' + c.nombre + ': ' + c.motivo));
+      unirSeg(); stats();
       $('aviso').textContent = '';
       $('segEstado').textContent = '✔ Comprobado.' + (fallos.length ? ' No he podido comprobar: ' + fallos.join(' · ') : '');
     }
     else if (d.sorteo === 'resultado') {
-      seguidores.length = 0; $('segEstado').textContent = '';
+      segAuto.length = 0; unirSeg(); $('segEstado').textContent = '';
       $('raw').value = d.texto; stats(); $('autoBtn').disabled = false;
       const dm = d.texto.match(/^#diag\t(\d+)\t(\d+)(?:\t(\S+)\t(\d+)\t(\d+))?/m);
       $('aviso').textContent = '✔ Comentarios cargados automáticamente desde Instagram.' +
@@ -459,7 +519,7 @@ $('print').addEventListener('click', () => window.print());
     if (!usuarios.length) { $('segEstado').textContent = 'Primero carga los comentarios.'; return; }
     if (!extOk) { $('segEstado').textContent = 'Primero instala la extensión: despliega «¿Primera vez?» y pulsa «Descargar extensión».'; return; }
     if (extVer < 2) { $('segEstado').textContent = 'Tu extensión es de una versión anterior y no sabe comprobar seguidores. Descarga la nueva en «¿Primera vez?», sustituye los archivos de la carpeta y pulsa recargar en chrome://extensions.'; return; }
-    seguidores.length = 0; stats();
+    segAuto.length = 0; unirSeg(); stats();
     midiendoSeg = true; inicioSeg = ultimaNoticia = Date.now();
     $('comprobarSeg').disabled = true; $('cancelarSeg').style.display = '';
     $('segEstado').dataset.msg = 'Preparando la comprobación de ' + usuarios.length + ' personas en ' + (cuentas.length === 1 ? 'la cuenta' : cuentas.length + ' cuentas');
