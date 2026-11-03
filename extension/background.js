@@ -6,6 +6,7 @@ const leer = async k => (await chrome.storage.session.get(k))[k];
 chrome.runtime.onMessage.addListener((m, sender, responder) => {
   responder({ ok: true }); // acuse de recibo para la página
   (async () => {
+   try {
     if (m.tipo === 'extraer' && sender.tab) {
       const tab = await chrome.tabs.create({ url: m.url, active: false });
       await guardar('t' + tab.id, { origen: sender.tab.id });
@@ -31,6 +32,10 @@ chrome.runtime.onMessage.addListener((m, sender, responder) => {
       chrome.tabs.sendMessage(info.origen, { sorteo: m.tipo, texto: m.texto }).catch(() => {});
       if (m.tipo !== 'progreso') chrome.tabs.remove(sender.tab.id).catch(() => {});
     }
+   } catch (e) {
+    // un fallo aquí no debe perderse en silencio: se le dice a la página
+    if (sender.tab) chrome.tabs.sendMessage(sender.tab.id, { sorteo: 'error', texto: 'La extensión ha fallado al abrir Instagram: ' + (e && e.message ? e.message : e) }).catch(() => {});
+   }
   })();
 });
 

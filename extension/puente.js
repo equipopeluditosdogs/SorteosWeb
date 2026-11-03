@@ -15,7 +15,7 @@ function enviar(msg) {
 }
 window.addEventListener('message', e => {
   if (e.source !== window || !e.data || !e.data.sorteo) return;
-  if (e.data.sorteo === 'ping') window.postMessage({ sorteo: 'ext-listo', version: 3 }, '*');
+  if (e.data.sorteo === 'ping') window.postMessage({ sorteo: 'ext-listo', version: 3, ver: chrome.runtime.getManifest().version }, '*');
   if (e.data.sorteo === 'extraer') enviar({ tipo: 'extraer', url: e.data.url });
   if (e.data.sorteo === 'cancelar') enviar({ tipo: 'cancelar' });
   if (e.data.sorteo === 'comprobar') enviar({ tipo: 'comprobar', datos: { cuentas: e.data.cuentas, usuarios: e.data.usuarios, cortar: !!e.data.cortar } });
@@ -23,4 +23,4 @@ window.addEventListener('message', e => {
 chrome.runtime.onMessage.addListener(m => {
   if (m && m.sorteo) window.postMessage(m, '*');
 });
-window.postMessage({ sorteo: 'ext-listo', version: 3 }, '*');
+window.postMessage({ sorteo: 'ext-listo', version: 3, ver: chrome.runtime.getManifest().version }, '*');
