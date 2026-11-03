@@ -12,7 +12,8 @@
 
   const informar = (tipo, texto) => window.postMessage({ sorteoExt: 1, tipo, texto }, '*');
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const PAUSA = 450; // entre peticiones, para no saturar a Instagram
+  const PAUSA = 450; // entre peticiones al leer comentarios, para no saturar a Instagram
+  const ritmo = { pausa: 300, hilos: 3 }; // al comprobar seguidores: varias consultas a la vez; si Instagram se queja, se frena solo
 
   async function extraer() {
     try {
@@ -59,6 +60,7 @@
         }
       });
       if (r.status === 429 || r.status === 560) {
+        ritmo.hilos = 1; ritmo.pausa = Math.max(ritmo.pausa, 1200); // frena: una consulta cada vez y más despacio
         informar('progreso', 'Instagram pide esperar un poco... reintentando en 30 s');
         await sleep(30000);
         continue;
@@ -131,6 +133,14 @@
 
 
   /* ---------- 3. Comprobar quién sigue a unas cuentas ---------- */
+  /* Reparte la lista en varios trabajadores que van a la vez (se reducen a uno si Instagram pide frenar). */
+  async function enPool(items, fn) {
+    let i = 0;
+    const trabajar = async k => { while (i < items.length && k < ritmo.hilos) await fn(items[i++]); };
+    await Promise.all(Array.from({ length: Math.min(ritmo.hilos, items.length) }, (_, k) => trabajar(k)));
+    while (i < items.length) await fn(items[i++]); // por si el freno dejó trabajo pendiente
+  }
+
   /* Mira si UNA persona sigue a la cuenta, buscándola entre sus seguidores. */
   async function sigueA(id, usuario) {
     let max = '';
@@ -144,7 +154,7 @@
       }
       if (!j.next_max_id || us.length === 0) return false;
       max = j.next_max_id;
-      await sleep(PAUSA);
+      await sleep(ritmo.pausa);
     }
     return false;
   }
@@ -161,7 +171,7 @@
       if (typeof sig !== 'string') sig = JSON.stringify(sig);
       if (!sig || sig === previo) break;
       previo = max = sig;
-      await sleep(PAUSA);
+      await sleep(ritmo.pausa);
     }
     return set;
   }
@@ -171,7 +181,7 @@
       informar('progreso', 'Buscando las cuentas en Instagram…');
       const todos = [...new Set((datos.usuarios || []).map(u => String(u).toLowerCase()))];
       const cuentas = (datos.cuentas || []).map(n => ({ nombre: n, ok: false, motivo: '', siguen: [], total: 0 }));
-      for (const c of cuentas) {
+      await enPool(cuentas, async c => {
         try {
           const j = await api('/api/v1/users/web_profile_info/?username=' + encodeURIComponent(c.nombre));
           const u = j && j.data && j.data.user;
@@ -179,31 +189,36 @@
           c.id = u.id; c.ok = true;
           c.total = (u.edge_followed_by && u.edge_followed_by.count) || u.follower_count || 0;
         } catch (e) { c.motivo = e.message; }
-        await sleep(PAUSA);
-      }
-      // primero las cuentas con menos seguidores: descartan a más gente y las demás se comprueban con menos personas
+        await sleep(ritmo.pausa);
+      });
       const buenas = cuentas.filter(c => c.ok).sort((a, b) => a.total - b.total);
+
+      // 1) las cuentas cuya lista compensa leer (bastantes menos consultas que ir persona por persona), todas a la vez
+      const compensa = c => c.total > 0 && Math.ceil(c.total / 100) * 2 <= todos.length;
+      const conLista = buenas.filter(compensa);
+      await Promise.all(conLista.map(async c => {
+        try { c.lista = await listaSeguidores(c); c.completa = c.lista.size >= c.total * 0.9; }
+        catch (e) { c.lista = null; }
+      }));
+
+      // 2) se resuelve primero lo que ya tiene lista (descarta rápido) y luego las cuentas grandes, persona a persona
       let vivos = todos;
-      for (const c of buenas) {
+      for (const c of [...conLista, ...buenas.filter(x => !compensa(x))]) {
         const mirar = datos.cortar ? vivos : todos;
-        try {
-          // ¿compensa leer la lista entera? sí si son bastantes menos consultas que ir persona por persona
-          const paginas = Math.ceil(c.total / 100);
-          let lista = null, completa = false;
-          if (c.total > 0 && paginas * 2 <= mirar.length) {
-            try { lista = await listaSeguidores(c); completa = lista.size >= c.total * 0.9; }
-            catch (e) { lista = null; }
-          }
-          let hechos = 0;
-          for (const usr of mirar) {
-            if (lista && lista.has(usr)) c.siguen.push(usr);
-            else if (!lista || !completa) { // sin lista o lista incompleta: se confirma buscándola a ella
-              if (await sigueA(c.id, usr)) c.siguen.push(usr);
-              await sleep(PAUSA);
-            }
-            if (++hechos % 5 === 0) informar('progreso', 'Comprobando @' + c.nombre + '... ' + hechos + ' de ' + mirar.length + ' personas');
-          }
-        } catch (e) { c.ok = false; c.motivo = e.message; }
+        const dudosos = [];
+        for (const usr of mirar) {
+          if (c.lista && c.lista.has(usr)) c.siguen.push(usr);
+          else if (!c.lista || !c.completa) dudosos.push(usr); // sin lista, o lista incompleta: se confirma buscándola a ella
+        }
+        let hechos = 0;
+        await enPool(dudosos, async usr => {
+          if (c.fallo) return;
+          try { if (await sigueA(c.id, usr)) c.siguen.push(usr); }
+          catch (e) { c.fallo = e.message; return; }
+          if (++hechos % 5 === 0 || hechos === dudosos.length) informar('progreso', 'Comprobando @' + c.nombre + '... ' + hechos + ' de ' + dudosos.length + ' personas');
+          await sleep(ritmo.pausa);
+        });
+        if (c.fallo) { c.ok = false; c.motivo = c.fallo; }
         if (datos.cortar && c.ok) { const f = new Set(c.siguen); vivos = vivos.filter(u => f.has(u)); }
       }
       informar('seguidores', JSON.stringify(cuentas.map(c => ({ nombre: c.nombre, ok: c.ok, motivo: c.motivo, siguen: c.siguen }))));
