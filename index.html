@@ -479,7 +479,7 @@ $('print').addEventListener('click', () => window.print());
     if (e.source !== window || !d || !d.sorteo) return;
     if (d.sorteo === 'ext-listo') {
       extOk = true; extVer = d.version || 1;
-      $('extEstado').textContent = '✔ Extensión conectada' + (d.ver ? ' (v' + d.ver + ')' : '') + ' · página v5' + (extVer < 2 ? ' — es una versión antigua: actualízala para comprobar seguidores (mira «¿Primera vez?»)' : '');
+      $('extEstado').textContent = '✔ Extensión conectada' + (extVer < 2 ? ' — es una versión antigua: actualízala para comprobar seguidores (mira «¿Primera vez?»)' : '');
     }
     else if (d.sorteo === 'progreso') {
       ultimaNoticia = Date.now();
