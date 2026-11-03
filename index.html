@@ -177,12 +177,6 @@
         <button class="sec" id="cancelarSeg" type="button" style="display:none">✖ Cancelar</button>
       </div>
       <p class="note" id="segEstado" style="margin:8px 0 0"></p>
-      <details class="note" style="margin:6px 0 8px">
-        <summary style="cursor:pointer;font-weight:600">¿Instagram no deja comprobarlo? Pega las listas de seguidores</summary>
-        <p style="margin:8px 0">Cada dueño de cuenta descarga su lista en Instagram: Configuración → Centro de cuentas → Tu información y permisos → Descargar tu información → Seguidores. Pega aquí el contenido de ese archivo, o un usuario por línea. Esta vía no hace ninguna consulta a Instagram.</p>
-        <div id="cuentasMan"></div>
-        <button class="sec" id="addMan" type="button">+ Añadir cuenta</button>
-      </details>
       <div class="check"><input type="checkbox" id="soloSeg" checked><label for="soloSeg">Solo participan quienes sigan a todas</label></div>
     </div>
     <div style="margin-top:16px"><label for="autor">Cuenta que ha hecho la publicación (sus comentarios no cuentan)</label><input type="text" id="autor" placeholder="tu_cuenta"><p class="note" id="autorHint" style="margin:6px 0 0"></p></div>
@@ -270,28 +264,8 @@ const mentions = (t, self) => new Set((t.match(/@[\w.]+/g) || []).map(clean).fil
 
 /* listas de seguidores (exportación oficial de Instagram): una por cada cuenta que hay que seguir */
 const seguidores = [];          // lo que usa el resto de la página: suma de las dos fuentes
-const segAuto = [], segManual = [];
-function unirSeg() { seguidores.length = 0; seguidores.push(...segAuto, ...segManual); }
-function userList(text) {
-  const set = new Set();
-  try {
-    (function walk(o) {
-      if (Array.isArray(o)) o.forEach(walk);
-      else if (o && typeof o === 'object') {
-        if (typeof o.value === 'string') set.add(clean(o.value));
-        Object.values(o).forEach(walk);
-      }
-    })(JSON.parse(text));
-    if (set.size) return set;
-  } catch (e) {}
-  if (/instagram\.com\//i.test(text)) {
-    for (const m of text.matchAll(/instagram\.com\/(?:_u\/)?([\w.]+)/gi)) set.add(clean(m[1]));
-    set.delete('');
-    if (set.size) return set;
-  }
-  text.split(/[\n,;]/).map(clean).filter(Boolean).forEach(u => set.add(u));
-  return set;
-}
+const segAuto = [];
+function unirSeg() { seguidores.length = 0; seguidores.push(...segAuto); }
 const lasCuentas = n => n === 1 ? 'la cuenta' : 'las ' + n + ' cuentas';
 const nSigue = c => seguidores.filter(s => s.set.has(c.user)).length;
 const siguenTodas = c => nSigue(c) === seguidores.length;
@@ -305,37 +279,6 @@ const textoSigue = c => {
 const cuentasSeg = () => [...new Set($('cuentasSeg').value.split(/[\s,;]+/).map(clean).filter(Boolean))];
 $('cuentasSeg').addEventListener('input', () => { segAuto.length = 0; unirSeg(); $('segEstado').textContent = ''; stats(); });
 
-/* listas pegadas a mano: un cuadro por cuenta */
-function nuevaMan() {
-  const d = document.createElement('div');
-  d.className = 'cuenta';
-  d.style.cssText = 'border:1.5px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px';
-  d.innerHTML = '<div class="row" style="margin-bottom:6px"><input type="text" class="cNombre" placeholder="Nombre de la cuenta (ej. peluditosdoghairsalon)" style="flex:1;min-width:180px">' +
-    '<span class="cCuenta note" style="margin:0"></span><a href="#" class="cQuitar" style="color:inherit" title="Quitar cuenta">✕</a></div>' +
-    '<textarea class="cLista" placeholder="Pega aquí los seguidores, uno por línea" style="min-height:110px"></textarea>';
-  $('cuentasMan').appendChild(d);
-}
-function leerMan() {
-  segManual.length = 0;
-  document.querySelectorAll('#cuentasMan .cuenta').forEach((d, i) => {
-    const texto = d.querySelector('.cLista').value;
-    const set = texto.trim() ? userList(texto) : new Set();
-    d.querySelector('.cCuenta').textContent = set.size ? set.size + (set.size === 1 ? ' seguidor leído' : ' seguidores leídos') : '';
-    if (set.size) segManual.push({ name: d.querySelector('.cNombre').value.trim().replace(/^@/, '') || 'cuenta ' + (i + 1), set });
-  });
-  unirSeg(); stats();
-}
-$('cuentasMan').addEventListener('input', leerMan);
-$('cuentasMan').addEventListener('click', e => {
-  if (!e.target.classList.contains('cQuitar')) return;
-  e.preventDefault();
-  const d = e.target.closest('.cuenta');
-  if (document.querySelectorAll('#cuentasMan .cuenta').length > 1) d.remove();
-  else { d.querySelector('.cNombre').value = ''; d.querySelector('.cLista').value = ''; }
-  leerMan();
-});
-$('addMan').addEventListener('click', nuevaMan);
-nuevaMan();
 
 /* participaciones aptas sin mirar a quién siguen */
 function candidatosBase(all) {
@@ -629,8 +572,7 @@ function guardar() {
         v: 1, fecha: new Date().toISOString(),
         raw: $('raw').value, cuentasSeg: $('cuentasSeg').value, autor: $('autor').value, excl: $('excl').value,
         nWin: $('nWin').value, minMen: $('minMen').value, dedup: $('dedup').checked, soloSeg: $('soloSeg').checked,
-        segAuto: segAuto.map(s => ({ name: s.name, usuarios: [...s.set] })),
-        man: [...document.querySelectorAll('#cuentasMan .cuenta')].map(d => ({ nombre: d.querySelector('.cNombre').value, lista: d.querySelector('.cLista').value }))
+        segAuto: segAuto.map(s => ({ name: s.name, usuarios: [...s.set] }))
       }));
       $('guardadoInfo').textContent = '💾 Guardado automáticamente en este navegador (' + new Date().toLocaleString('es-ES') + ').';
     } catch (e) { $('guardadoInfo').textContent = 'No he podido guardar los datos en este navegador (¿modo privado o sin espacio?).'; }
@@ -645,12 +587,7 @@ function restaurar() {
     $('nWin').value = d.nWin || 3; $('minMen').value = d.minMen || 0; $('dedup').checked = !!d.dedup; $('soloSeg').checked = d.soloSeg !== false;
     const marca = (d.raw || '').match(/^#autor\s+@?([\w.]+)/m); if (marca) $('autor').dataset.auto = marca[1]; // no pisa el autor guardado
     segAuto.length = 0; (d.segAuto || []).forEach(s => segAuto.push({ name: s.name, set: new Set(s.usuarios) }));
-    (d.man || []).forEach((m, i) => {
-      if (i > 0) nuevaMan();
-      const b = document.querySelectorAll('#cuentasMan .cuenta')[i];
-      b.querySelector('.cNombre').value = m.nombre || ''; b.querySelector('.cLista').value = m.lista || '';
-    });
-    leerMan(); // junta las listas y recalcula todo
+    unirSeg(); stats(); // recalcula todo
     $('guardadoInfo').textContent = '💾 Recuperado el último análisis guardado (' + new Date(d.fecha).toLocaleString('es-ES') + ').';
   } catch (e) { /* datos ilegibles: se empieza de cero */ }
 }
