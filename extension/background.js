@@ -10,9 +10,16 @@ chrome.runtime.onMessage.addListener((m, sender) => {
       await guardar('t' + tab.id, { origen: sender.tab.id });
       iniciar(tab.id, { tipo: 'iniciar' });
     } else if (m.tipo === 'comprobar' && sender.tab) {
+      chrome.tabs.sendMessage(sender.tab.id, { sorteo: 'progreso', texto: 'Abriendo Instagram en segundo plano…' }).catch(() => {});
       const tab = await chrome.tabs.create({ url: 'https://www.instagram.com/', active: false });
       await guardar('t' + tab.id, { origen: sender.tab.id });
       iniciar(tab.id, { tipo: 'comprobar', datos: m.datos });
+    } else if (m.tipo === 'cancelar' && sender.tab) {
+      // cierra las pestañas de Instagram que abrió esta página: el trabajo se detiene
+      const todo = await chrome.storage.session.get(null);
+      for (const [k, v] of Object.entries(todo)) {
+        if (k[0] === 't' && v && v.origen === sender.tab.id) { chrome.tabs.remove(Number(k.slice(1))).catch(() => {}); chrome.storage.session.remove(k); }
+      }
     } else if (m.tipo === 'primer-plano' && sender.tab) {
       // la vía rápida ha fallado: el método de scroll necesita la pestaña visible
       chrome.tabs.update(sender.tab.id, { active: true }).catch(() => {});
@@ -37,7 +44,7 @@ async function iniciar(tabId, mensaje) {
   }
   const info = await leer('t' + tabId);
   if (info) {
-    chrome.tabs.sendMessage(info.origen, { sorteo: 'error', texto: 'No he podido abrir la publicación. ¿Has iniciado sesión en Instagram en este Chrome?' }).catch(() => {});
+    chrome.tabs.sendMessage(info.origen, { sorteo: 'error', texto: 'No he podido hablar con la pestaña de Instagram. ¿Has iniciado sesión en Instagram en este Chrome?' }).catch(() => {});
     chrome.tabs.remove(tabId).catch(() => {});
   }
 }

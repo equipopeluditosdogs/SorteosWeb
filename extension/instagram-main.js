@@ -168,6 +168,7 @@
 
   async function comprobar(datos) {
     try {
+      informar('progreso', 'Buscando las cuentas en Instagram…');
       const todos = [...new Set((datos.usuarios || []).map(u => String(u).toLowerCase()))];
       const cuentas = (datos.cuentas || []).map(n => ({ nombre: n, ok: false, motivo: '', siguen: [], total: 0 }));
       for (const c of cuentas) {
