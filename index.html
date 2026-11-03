@@ -56,6 +56,12 @@
   #modalLista li span { grid-row:span 2; font-size:1.5rem; text-align:center; }
   #modalLista li b { overflow-wrap:anywhere; }
   #modalLista li small { color:var(--muted); overflow-wrap:anywhere; }
+  .estad h3 { margin:16px 0 6px; font-size:.95rem; color:var(--marron); }
+  .estad table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  .estad td { padding:6px 8px; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+  .estad td:last-child { text-align:right; font-weight:600; white-space:nowrap; }
+  .estad tr.menos td { color:var(--muted); }
+  .estad tr.total td { font-weight:700; color:var(--verde-osc); border-bottom:0; background:var(--crema); }
   .step { display:inline-grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--grad); color:#fff; font-size:.85rem; font-weight:700; }
   .note { overflow-wrap:anywhere; font-size:.88rem; color:var(--muted); margin:0 0 12px; }
   textarea { width:100%; min-height:200px; border:1.5px solid var(--line); border-radius:12px; padding:12px; font:inherit; font-size:.92rem; resize:vertical; background:#fcfbff; transition:border-color .15s, box-shadow .15s; }
@@ -121,7 +127,7 @@
   .meta { font-size:.82rem; color:var(--muted); margin-top:14px; }
   canvas#fx { position:fixed; inset:0; pointer-events:none; z-index:10; }
   @keyframes pop { from { opacity:0; transform:translateY(10px) scale(.97); } to { opacity:1; transform:none; } }
-  @media print { .modal { display:none !important; } .card > .cuerpo { display:block !important; } .olas { display:none; } .hero, .noprint { display:none; } .solo-imprimir { display:block; width:220px; margin:0 auto 16px; border-radius:14px; } body { background:#fff; } main { margin:0; } .card { box-shadow:none; } }
+  @media print { .estad { display:none; } .modal { display:none !important; } .card > .cuerpo { display:block !important; } .olas { display:none; } .hero, .noprint { display:none; } .solo-imprimir { display:block; width:220px; margin:0 auto 16px; border-radius:14px; } body { background:#fff; } main { margin:0; } .card { box-shadow:none; } }
 </style>
 </head>
 <body>
@@ -154,7 +160,6 @@
     </details>
     <p id="aviso" class="note" style="color:var(--verde-osc);font-weight:600"></p>
     <textarea id="raw" placeholder="Pega aquí los comentarios..."></textarea>
-    <div id="stats"></div>
   </section>
 
   <section class="card noprint">
@@ -184,8 +189,21 @@
     <div style="margin-top:12px"><label for="excl">Excluir usuarios (separados por comas, sin @)</label><input type="text" id="excl" placeholder="tu_cuenta, colaborador1"></div>
   </section>
 
+  <section class="card estad">
+    <h2><span class="step">3</span> Estadísticas</h2>
+    <p class="note" id="estadVacio" style="margin-top:12px">Aquí se resumen los comentarios y quién participa. Carga los comentarios para verlo.</p>
+    <div id="stats" style="margin-top:12px"></div>
+    <div id="estadDetalle"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="sec" id="descJson" type="button">⬇ Descargar estadísticas (.json)</button>
+      <button class="sec" id="descCsv" type="button">⬇ Descargar participantes (.csv)</button>
+      <button class="sec" id="borrarGuardado" type="button">🗑 Borrar datos guardados</button>
+    </div>
+    <p class="note" id="guardadoInfo" style="margin:8px 0 0"></p>
+  </section>
+
   <section class="card">
-    <h2 class="noprint"><span class="step">3</span> Sorteo</h2>
+    <h2 class="noprint"><span class="step">4</span> Sorteo</h2>
     <div class="row noprint" style="margin-top:12px">
       <button id="go" class="main">🎲 Sortear</button>
       <button id="verGan" class="sec" style="display:none">🎉 Ver cartel y ganadores</button>
@@ -357,6 +375,8 @@ function stats() {
     ? `<span>${all.length} comentarios</span><span>${new Set(all.map(x => x.user)).size} usuarios</span><span>${c.length} ${c.length === 1 ? 'participación válida' : 'participaciones válidas'}</span><span>${new Set(c.map(x => x.user)).size === 1 ? '1 persona participando' : new Set(c.map(x => x.user)).size + ' personas participando'}</span>` +
       (seguidores.length ? `<span>${personasSiguen} de ${personasBase} personas aptas siguen a ${lasCuentas(seguidores.length)}</span>` : '')
     : '';
+  pintarEstad(all, c, base);
+  guardar();
 }
 ['raw','nWin','minMen','dedup','excl','autor','soloSeg'].forEach(id => $(id).addEventListener('input', stats));
 async function sha(s) {
@@ -557,6 +577,136 @@ $('modalCerrar').addEventListener('click', cerrarGanadores);
 $('modalGan').addEventListener('click', e => { if (e.target === $('modalGan')) cerrarGanadores(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarGanadores(); });
 $('verGan').addEventListener('click', abrirGanadores);
+
+/* ---------- estadísticas, datos guardados y descargas ---------- */
+const CLAVE = 'sorteoDatos';
+let restaurando = true, tGuardar = null;
+
+/* de los comentarios leídos a las participaciones válidas, paso a paso */
+function embudo(all) {
+  const excl = new Set($('excl').value.split(',').concat($('autor').value).map(clean).filter(Boolean));
+  const min = +$('minMen').value || 0;
+  const filas = [['Comentarios leídos', all.length]];
+  const l1 = all.filter(c => !excl.has(c.user));
+  filas.push(['De la cuenta que publica y de las excluidas', -(all.length - l1.length)]);
+  const l2 = l1.filter(c => mentions(c.text, c.user) >= min);
+  if (min > 0) filas.push(['Con menos de ' + min + ' menciones', -(l1.length - l2.length)]);
+  let l3 = l2;
+  if ($('dedup').checked) { const v = new Set(); l3 = l2.filter(c => !v.has(c.user) && v.add(c.user)); filas.push(['Repetidos del mismo usuario', -(l2.length - l3.length)]); }
+  let l4 = l3;
+  if (seguidores.length && $('soloSeg').checked) { l4 = l3.filter(siguenTodas); filas.push(['No siguen a todas las cuentas', -(l3.length - l4.length)]); }
+  filas.push(['Participaciones válidas', l4.length, true]);
+  return filas;
+}
+
+function pintarEstad(all, c, base) {
+  $('estadVacio').style.display = all.length ? 'none' : '';
+  if (!all.length) { $('estadDetalle').innerHTML = ''; return; }
+  const fila = (t, n, cls) => '<tr class="' + (cls || '') + '"><td>' + esc(t) + '</td><td>' + (typeof n === 'number' && n < 0 ? '−' + (-n) : n) + '</td></tr>';
+  let html = '<h3>De los comentarios a las participaciones válidas</h3><table>' +
+    embudo(all).map(([t, n, total]) => fila(t, n, total ? 'total' : n < 0 ? 'menos' : '')).join('') + '</table>';
+  const porUsuario = new Map();
+  c.forEach(x => porUsuario.set(x.user, (porUsuario.get(x.user) || 0) + 1));
+  const top = [...porUsuario].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (top.length) html += '<h3>Quién tiene más comentarios válidos</h3><table>' +
+    top.map(([u, n]) => fila('@' + u, n + (n === 1 ? ' comentario' : ' comentarios'))).join('') + '</table>';
+  if (seguidores.length) {
+    const aptas = new Set(base.map(x => x.user));
+    html += '<h3>Personas aptas que siguen a cada cuenta</h3><table>' +
+      seguidores.map(s => fila('@' + s.name, [...aptas].filter(u => s.set.has(u)).length + ' de ' + aptas.size)).join('') + '</table>' +
+      '<p class="note" style="margin:6px 0 0">Con la comprobación rápida, a quien ya no cumple no se le mira en las demás cuentas, así que sus cifras pueden quedarse cortas.</p>';
+  }
+  $('estadDetalle').innerHTML = html;
+}
+
+/* se guarda solo en este navegador cada vez que cambia algo */
+function guardar() {
+  if (restaurando) return;
+  clearTimeout(tGuardar);
+  tGuardar = setTimeout(() => {
+    try {
+      localStorage.setItem(CLAVE, JSON.stringify({
+        v: 1, fecha: new Date().toISOString(),
+        raw: $('raw').value, cuentasSeg: $('cuentasSeg').value, autor: $('autor').value, excl: $('excl').value,
+        nWin: $('nWin').value, minMen: $('minMen').value, dedup: $('dedup').checked, soloSeg: $('soloSeg').checked,
+        segAuto: segAuto.map(s => ({ name: s.name, usuarios: [...s.set] })),
+        man: [...document.querySelectorAll('#cuentasMan .cuenta')].map(d => ({ nombre: d.querySelector('.cNombre').value, lista: d.querySelector('.cLista').value }))
+      }));
+      $('guardadoInfo').textContent = '💾 Guardado automáticamente en este navegador (' + new Date().toLocaleString('es-ES') + ').';
+    } catch (e) { $('guardadoInfo').textContent = 'No he podido guardar los datos en este navegador (¿modo privado o sin espacio?).'; }
+  }, 600);
+}
+
+function restaurar() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CLAVE) || 'null');
+    if (!d || d.v !== 1) return;
+    $('raw').value = d.raw || ''; $('cuentasSeg').value = d.cuentasSeg || ''; $('autor').value = d.autor || ''; $('excl').value = d.excl || '';
+    $('nWin').value = d.nWin || 3; $('minMen').value = d.minMen || 0; $('dedup').checked = !!d.dedup; $('soloSeg').checked = d.soloSeg !== false;
+    const marca = (d.raw || '').match(/^#autor\s+@?([\w.]+)/m); if (marca) $('autor').dataset.auto = marca[1]; // no pisa el autor guardado
+    segAuto.length = 0; (d.segAuto || []).forEach(s => segAuto.push({ name: s.name, set: new Set(s.usuarios) }));
+    (d.man || []).forEach((m, i) => {
+      if (i > 0) nuevaMan();
+      const b = document.querySelectorAll('#cuentasMan .cuenta')[i];
+      b.querySelector('.cNombre').value = m.nombre || ''; b.querySelector('.cLista').value = m.lista || '';
+    });
+    leerMan(); // junta las listas y recalcula todo
+    $('guardadoInfo').textContent = '💾 Recuperado el último análisis guardado (' + new Date(d.fecha).toLocaleString('es-ES') + ').';
+  } catch (e) { /* datos ilegibles: se empieza de cero */ }
+}
+
+function descargar(nombre, texto, tipo) {
+  const url = URL.createObjectURL(new Blob([texto], { type: tipo + ';charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const hoy = () => new Date().toISOString().slice(0, 10);
+
+/* una fila por persona que ha comentado */
+function participantes() {
+  const all = parse($('raw').value), validos = candidates(all), personas = new Map();
+  all.forEach(c => { const p = personas.get(c.user) || { usuario: c.user, comentarios: 0, validos: 0 }; p.comentarios++; personas.set(c.user, p); });
+  validos.forEach(c => { personas.get(c.user).validos++; });
+  return [...personas.values()].map(p => ({
+    ...p, apto: p.validos > 0,
+    siguen: Object.fromEntries(seguidores.map(s => [s.name, s.set.has(p.usuario)]))
+  })).sort((a, b) => b.validos - a.validos || b.comentarios - a.comentarios || a.usuario.localeCompare(b.usuario));
+}
+
+$('descJson').addEventListener('click', () => {
+  const all = parse($('raw').value), c = candidates(all), ps = participantes();
+  descargar('estadisticas-sorteo-' + hoy() + '.json', JSON.stringify({
+    fecha: new Date().toISOString(), publicacion: $('postUrl').value.trim(), cuentaQuePublica: clean($('autor').value),
+    opciones: { puestosDelPodio: +$('nWin').value || 1, mencionesMinimas: +$('minMen').value || 0, unaParticipacionPorUsuario: $('dedup').checked, soloQuienSigueATodas: $('soloSeg').checked },
+    cuentasQueHayQueSeguir: seguidores.map(s => ({ cuenta: s.name, seguidoresLeidos: s.set.size })),
+    estadisticas: {
+      comentarios: all.length, usuariosDistintos: new Set(all.map(x => x.user)).size,
+      participacionesValidas: c.length, personasParticipando: new Set(c.map(x => x.user)).size
+    },
+    embudo: embudo(all).map(([paso, cantidad]) => ({ paso, cantidad })),
+    ganadores: ultimoSorteo ? ultimoSorteo.picked.slice(0, ultimoSorteo.nW).map((g, i) => ({ puesto: i + 1, usuario: g.user, suplente: (ultimoSorteo.picked[ultimoSorteo.nW + i] || {}).user || null })) : [],
+    participantes: ps
+  }, null, 2), 'application/json');
+});
+
+$('descCsv').addEventListener('click', () => {
+  const ps = participantes(), cuentas = seguidores.map(s => s.name);
+  const celda = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const filas = [['usuario', 'comentarios', 'comentarios_validos', 'apto', ...cuentas.map(n => 'sigue_a_' + n)].map(celda).join(';')];
+  ps.forEach(p => filas.push([p.usuario, p.comentarios, p.validos, p.apto ? 'sí' : 'no', ...cuentas.map(n => p.siguen[n] ? 'sí' : 'no')].map(celda).join(';')));
+  descargar('participantes-sorteo-' + hoy() + '.csv', '\ufeff' + filas.join('\r\n'), 'text/csv'); // BOM para que Excel lea bien los acentos
+});
+
+$('borrarGuardado').addEventListener('click', () => {
+  if (!confirm('¿Borrar los datos guardados y empezar de cero?')) return;
+  restaurando = true;
+  try { localStorage.removeItem(CLAVE); localStorage.removeItem('postUrl'); } catch (e) {}
+  location.reload();
+});
+
+restaurar();
+restaurando = false;
 
 /* bloques plegables */
 document.querySelectorAll('main > section.card').forEach(sec => {
